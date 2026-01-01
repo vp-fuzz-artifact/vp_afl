@@ -1,0 +1,33 @@
+{
+    "UART": {
+        "registers": {
+            "cr_reg":{
+                "address": "0x1000a02c",
+                "mask": null,
+                "length": 16,
+                "interval_ms": "0.05",
+                "on_write": "start_injection"
+            }
+        }
+    },
+    "SIMDEV": {
+        "registers": {
+            "stop":{
+                "address": "0x10008000",
+                "length": 32,
+                "interval_ms": null,
+                "on_write": "notify_sim_end"
+            }
+        }
+    },
+    "INIT": {
+        "registers": {
+            "start": {
+                "address": "0x10027000",
+                "length": 32,
+                "interval_ms": null,
+                "on_write": "notify_init_end"
+            }
+        }
+    }
+}

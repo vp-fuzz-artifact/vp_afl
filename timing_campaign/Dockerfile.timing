@@ -1,0 +1,24 @@
+# The DEBUG=1 harness, in its own image so the fuzzing image is never touched.
+#
+#   ./container_build.sh                       # handles the base image too
+#   podman build -t vp-afl-timing -f timing_campaign/Dockerfile.timing .
+#
+# DEBUG is a compile-time switch (#if DEBUG == 1 in harness/src/main.cpp): the
+# normal build runs the AFL fuzzing loop, the DEBUG build runs the benchmark
+# loop that timestamps init, each execution and each restart.  Everything else
+# -- VP, AFL, CRIU -- is inherited unchanged from the fuzzing image, so this
+# rebuilds one small target and nothing else.
+ARG BASE_IMAGE=localhost/vp-afl:latest
+FROM ${BASE_IMAGE}
+
+# Copy the harness source in before rebuilding: the base image baked in
+# whatever vp_mode/harness looked like when IT was built, so without this the
+# DEBUG harness is compiled from stale source and a local fix (say, to the
+# input memcpy in dbg_run) silently would not reach the measurements.  It also
+# means an edit to the harness invalidates the cache here and nowhere else, so
+# a rebuild stays cheap.
+COPY vp_mode/harness/ /app/vp_mode/harness/
+
+# rm the build dir so cmake reconfigures with the new CMAKE_CXX_FLAGS instead
+# of reusing the cached ones from the non-DEBUG build.
+RUN rm -rf /app/build/harness && make harness DEBUG=1

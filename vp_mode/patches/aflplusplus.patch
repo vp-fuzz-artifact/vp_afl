@@ -1,0 +1,217 @@
+From 3e8db81089861b8268c9d769c19cf84810cd8bb9 Mon Sep 17 00:00:00 2001
+From: ChiaraGhinami <chiara.ghinami@gmail.com>
+Date: Mon, 6 Jul 2026 17:13:07 +0200
+Subject: [PATCH] Applying changes to AFL++ to work with custom SysC VPs
+
+---
+ include/config.h     |  3 ++-
+ include/forkserver.h |  2 ++
+ src/afl-forkserver.c |  6 +++---
+ src/afl-fuzz-init.c  |  6 +++---
+ src/afl-fuzz.c       | 48 +++++++++++++++++++++++++++++++++++++++-----
+ 5 files changed, 53 insertions(+), 12 deletions(-)
+
+diff --git a/include/config.h b/include/config.h
+index 99559c30..8bee6595 100644
+--- a/include/config.h
++++ b/include/config.h
+@@ -493,7 +493,8 @@ We add 4 byte for one u32 length field. */
+    problems with complex programs). You need to recompile the target binary
+    after changing this - otherwise, SEGVs may ensue. */
+ 
+-#define MAP_SIZE_POW2 16
++/* VP mode: must match MAP_SIZE_POW2 in avp64 include/fuzzing/vp_manager.hpp */
++#define MAP_SIZE_POW2 21
+ 
+ /* Do not change this unless you really know what you are doing. */
+ 
+diff --git a/include/forkserver.h b/include/forkserver.h
+index ba106750..c0c5d4b4 100644
+--- a/include/forkserver.h
++++ b/include/forkserver.h
+@@ -161,6 +161,8 @@ typedef struct afl_forkserver {
+ 
+   bool qemu_mode;                       /* if running in qemu mode or not   */
+ 
++  bool vp_mode;                       /* if running in vp mode or not  */
++
+   bool unicorn_mode;                    /* if running in unicorn mode or not*/
+ 
+   bool frida_mode;                     /* if running in frida mode or not   */
+diff --git a/src/afl-forkserver.c b/src/afl-forkserver.c
+index 461cd889..c4412439 100644
+--- a/src/afl-forkserver.c
++++ b/src/afl-forkserver.c
+@@ -246,7 +246,7 @@ static list_t fsrv_list = {.element_prealloc_count = 0};
+ 
+ static void fsrv_exec_child(afl_forkserver_t *fsrv, char **argv) {
+ 
+-  if (fsrv->qemu_mode || fsrv->cs_mode) {
++  if (fsrv->qemu_mode || fsrv->cs_mode || fsrv->vp_mode) {
+ 
+     setenv("AFL_DISABLE_LLVM_INSTRUMENTATION", "1", 0);
+ 
+@@ -1741,7 +1741,7 @@ void afl_fsrv_start(afl_forkserver_t *fsrv, char **argv,
+       }
+ 
+ #endif
+-      if (!fsrv->qemu_mode && !fsrv->cs_mode && !fsrv->use_fauxsrv
++      if (!fsrv->qemu_mode && !fsrv->vp_mode && !fsrv->cs_mode && !fsrv->use_fauxsrv
+ #ifdef __linux__
+           && !fsrv->nyx_mode
+ #endif
+@@ -2298,7 +2298,7 @@ void afl_fsrv_resize_mapsize(afl_forkserver_t *fsrv, void *shm_p,
+                              char **use_argv, u32 map_size,
+                              volatile u8 *stop_soon, bool unicorn_mode) {
+ 
+-  if (!fsrv->cs_mode && (!fsrv->qemu_mode || fsrv->qemu_bridge) &&
++  if (!fsrv->cs_mode && !fsrv->vp_mode && (!fsrv->qemu_mode || fsrv->qemu_bridge) &&
+       !unicorn_mode) {
+ 
+     if (map_size <= DEFAULT_SHMEM_SIZE) {
+diff --git a/src/afl-fuzz-init.c b/src/afl-fuzz-init.c
+index ca37cc12..c3c8efb4 100644
+--- a/src/afl-fuzz-init.c
++++ b/src/afl-fuzz-init.c
+@@ -3185,7 +3185,7 @@ void check_binary(afl_state_t *afl, u8 *fname) {
+ 
+   }
+ 
+-  if (afl->afl_env.afl_skip_bin_check || afl->use_wine || afl->unicorn_mode ||
++  if (afl->afl_env.afl_skip_bin_check || afl->use_wine || afl->unicorn_mode || afl->fsrv.vp_mode ||
+       (afl->fsrv.qemu_mode && getenv("AFL_QEMU_CUSTOM_BIN")) ||
+       (afl->fsrv.cs_mode && getenv("AFL_CS_CUSTOM_BIN")) ||
+       afl->non_instrumented_mode) {
+@@ -3263,7 +3263,7 @@ void check_binary(afl_state_t *afl, u8 *fname) {
+ 
+ #endif                                                       /* ^!__APPLE__ */
+ 
+-  if (!afl->fsrv.qemu_mode && !afl->fsrv.frida_mode && !afl->unicorn_mode &&
++  if (!afl->fsrv.qemu_mode && !afl->fsrv.vp_mode && !afl->fsrv.frida_mode && !afl->unicorn_mode &&
+ #ifdef __linux__
+       !afl->fsrv.nyx_mode &&
+ #endif
+@@ -3298,7 +3298,7 @@ void check_binary(afl_state_t *afl, u8 *fname) {
+ 
+   }
+ 
+-  if ((afl->fsrv.cs_mode || afl->fsrv.qemu_mode || afl->fsrv.frida_mode) &&
++  if ((afl->fsrv.cs_mode || afl->fsrv.vp_mode || afl->fsrv.qemu_mode || afl->fsrv.frida_mode) &&
+       afl_memmem(f_data, f_len, SHM_ENV_VAR, strlen(SHM_ENV_VAR))) {
+ 
+     SAYF("\n" cLRD "[-] " cRST
+diff --git a/src/afl-fuzz.c b/src/afl-fuzz.c
+index d77b0fcf..f138be35 100644
+--- a/src/afl-fuzz.c
++++ b/src/afl-fuzz.c
+@@ -302,6 +302,7 @@ static void usage(u8 *argv0, int more_help) {
+       "  -O            - use binary-only instrumentation (FRIDA mode)\n"
+ #if defined(__linux__)
+       "  -Q            - use binary-only instrumentation (QEMU mode)\n"
++      "  -v            - use binary-only instrumentation (VP mode)\n"
+       "  -U            - use unicorn-based instrumentation (Unicorn mode)\n"
+       "  -W            - use qemu-based instrumentation with Wine (Wine mode)\n"
+ #endif
+@@ -812,11 +813,11 @@ void afl_parse_commandline(afl_state_t *afl, int argc, char **argv) {
+   afl->argv_cpy = argv_dup;
+   afl->argc_cpy = argc;
+ 
+-  // still available: HjJkqrv
++  // still available: HjJkqr
+   while ((opt = getopt(
+               argc, argv,
+               "+a:Ab:B:c:CdDe:E:f:F:g:G:hi:I:K:l:L::m:M:nNo:Op:P:QRs:S:t:T:"
+-              "uUV:w:WXx:YzZ")) > 0) {
++              "uUV:w:WXx:YzZ:v")) > 0) {
+ 
+     switch (opt) {
+ 
+@@ -1427,6 +1428,14 @@ void afl_parse_commandline(afl_state_t *afl, int argc, char **argv) {
+ 
+         break;
+ 
++      case 'v':                                             /* VP mode */    
++
++        afl->fsrv.vp_mode = 1;
++
++        if (!mem_limit_given) { afl->fsrv.mem_limit = MEM_LIMIT_QEMU; }
++
++        break;
++
+       case 'N':                                             /* Unicorn mode */
+ 
+         if (afl->no_unlink) { FATAL("Multiple -N options not supported"); }
+@@ -1707,7 +1716,7 @@ void afl_parse_commandline(afl_state_t *afl, int argc, char **argv) {
+   configure_afl_kill_signals(
+       &afl->fsrv, afl->afl_env.afl_child_kill_signal,
+       afl->afl_env.afl_fsrv_kill_signal,
+-      (afl->fsrv.qemu_mode || afl->unicorn_mode || afl->fsrv.use_fauxsrv
++      (afl->fsrv.qemu_mode || afl->fsrv.vp_mode || afl->unicorn_mode || afl->fsrv.use_fauxsrv
+   #ifdef __linux__
+        || afl->fsrv.nyx_mode
+   #endif
+@@ -1797,6 +1806,7 @@ void afl_check_environment(afl_state_t *afl) {
+     if (afl->crash_mode) { FATAL("-C and -n are mutually exclusive"); }
+     if (afl->fsrv.frida_mode) { FATAL("-O and -n are mutually exclusive"); }
+     if (afl->fsrv.qemu_mode) { FATAL("-Q and -n are mutually exclusive"); }
++    if (afl->fsrv.vp_mode) { FATAL("-v and -n are mutually exclusive"); }
+     if (afl->fsrv.cs_mode) { FATAL("-A and -n are mutually exclusive"); }
+     if (afl->unicorn_mode) { FATAL("-U and -n are mutually exclusive"); }
+ 
+@@ -2416,7 +2426,9 @@ void afl_setup_environment(afl_state_t *afl) {
+ 
+   }
+ 
+-  check_binary(afl, afl->argv_cpy[optind]);
++  //If in vp mode the target is not actually a binary, but rather a .cfg file.
++  if(!afl->fsrv.vp_mode)
++    check_binary(afl, afl->argv_cpy[optind]);
+ 
+   u64 prev_target_hash = 0;
+ 
+@@ -2674,6 +2686,10 @@ void afl_alloc_shared_memory(afl_state_t *afl) {
+     use_argv = get_cs_argv(afl->argv_cpy[0], &afl->fsrv.target_path,
+                            afl->argc_cpy - optind, afl->argv_cpy + optind);
+ 
++  } else if (afl->fsrv.vp_mode) {
++
++    afl->fsrv.target_path = alloc_printf("%s", getenv("TC_PATH"));
++
+   } else {
+ 
+     use_argv = afl->argv_cpy + optind;
+@@ -2706,8 +2722,30 @@ void afl_alloc_shared_memory(afl_state_t *afl) {
+ 
+   #endif
+ 
++  if (afl->fsrv.vp_mode) {
++
++    //The first argument must be the filename of the executable or emtpy string.
++    char **vp_argv = ck_alloc(sizeof(char *) * 6);
++    vp_argv[0]=""; // harness
++
++    vp_argv[1] = ck_alloc(100);
++    strcpy(vp_argv[1], afl->argv_cpy[optind]);
++
++    vp_argv[2] = ck_alloc(50);
++    sprintf(vp_argv[2], "%d", (afl->shm_fuzz->shm_id)); // test case
++    vp_argv[3] = ck_alloc(50);
++    sprintf(vp_argv[3], "%d", (afl->shm.shm_id)); // coverage
++    vp_argv[4] = ck_alloc(50);
++    sprintf(vp_argv[4], "%d", FORKSRV_FD); // test case
++    vp_argv[5] = ck_alloc(50);
++    sprintf(vp_argv[5], "%d", (FORKSRV_FD)+1); // test case
++    
++    afl->argv = vp_argv;
++  }
++
++
+   if (!afl->non_instrumented_mode && !afl->unicorn_mode &&
+-      !afl->fsrv.frida_mode && !afl->fsrv.cs_mode &&
++      !afl->fsrv.vp_mode && !afl->fsrv.frida_mode && !afl->fsrv.cs_mode &&
+       !afl->afl_env.afl_skip_bin_check) {
+ 
+     if (afl->map_size <= DEFAULT_SHMEM_SIZE) {
+-- 
+2.34.1
+

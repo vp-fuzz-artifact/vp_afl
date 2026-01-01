@@ -1,0 +1,15 @@
+[submodule "vp_mode/avp64"]
+	path = vp_mode/avp64
+	url = ../avp64.git
+	branch = checkpointing_criu
+[submodule "vp_mode/vp-testing-interface"]
+	path = vp_mode/vp-testing-interface
+	url = ../vp-testing-interface.git
+[submodule "vp_mode/aflplusplus"]
+	path = vp_mode/aflplusplus
+	url = https://github.com/aflplusplus/aflplusplus
+	ignore = dirty
+[submodule "vp_mode/vcml"]
+	path = vp_mode/vcml
+	url = https://github.com/machineware-gmbh/vcml
+	ignore = dirty

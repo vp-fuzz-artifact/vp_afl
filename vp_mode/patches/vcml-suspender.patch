@@ -1,0 +1,49 @@
+diff --git a/include/vcml/debugging/suspender.h b/include/vcml/debugging/suspender.h
+index ffa869df..4e494046 100644
+--- a/include/vcml/debugging/suspender.h
++++ b/include/vcml/debugging/suspender.h
+@@ -43,6 +43,7 @@ public:
+     static void current(vector<suspender*>& v);
+     static void quit();
+     static bool simulation_suspended();
++    static bool suspenders_waiting();
+     static void handle_requests();
+ };
+ 
+diff --git a/src/vcml/debugging/suspender.cpp b/src/vcml/debugging/suspender.cpp
+index 880f78ae..eef020f5 100644
+--- a/src/vcml/debugging/suspender.cpp
++++ b/src/vcml/debugging/suspender.cpp
+@@ -43,6 +43,8 @@ struct suspend_manager {
+ 
+     void handle_requests();
+ 
++    size_t num_waiting() const;
++
+     suspend_manager();
+ 
+     static suspend_manager& instance();
+@@ -210,6 +212,12 @@ void suspend_manager::handle_requests() {
+     suspender_lock.unlock();
+ }
+ 
++size_t suspend_manager::num_waiting() const {
++    lock_guard<mutex> guard(suspender_lock);
++
++    return waiting_suspenders.size();
++}
++
+ suspend_manager::suspend_manager():
+     is_quitting(false),
+     is_suspended(false),
+@@ -270,6 +278,10 @@ bool suspender::simulation_suspended() {
+     return suspend_manager::instance().is_suspended;
+ }
+ 
++bool suspender::suspenders_waiting() {
++    return suspend_manager::instance().num_waiting() > 0;
++}
++
+ void suspender::handle_requests() {
+     suspend_manager::instance().handle_requests();
+ }
