@@ -158,7 +158,7 @@ source ./scripts/env.sh
 sudo -E TC_CHKPT_MODE=1 TC_DUMP=1 ./vp_mode/example_target/run_fuzzer.bash arch_pro
 ```
 
-To start a fuzzing campaign of multiple rounds where all the checkpointing configurations are exercised and useful metrics, such as speed, coverage and number o crashes are measured, please refer to the corresponding campaigns READMEs: [timing campaign](timing_campaign/README.md) and [fuzzing campaign](campaign/README.md).
+To start a fuzzing campaign of multiple rounds where all the checkpointing configurations are exercised and useful metrics, such as speed, coverage and number o crashes are measured, please refer to the corresponding campaigns READMEs: [timing campaign](timing_campaign/README.md) and [fuzzing campaign](campaign/README.md). You can refer to the [benchmark repo](https://github.com/vp-fuzz-artifact/vp_sw_benchmarks) to run more example programs.
 
 ### Checkpointing Options
 
